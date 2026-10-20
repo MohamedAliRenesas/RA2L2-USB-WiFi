@@ -1,2 +1,134 @@
 # RA2L2-USB-WiFi
-The RA2L2 USB WiFi application combines USB terminal control with WiFi-driven LED status reporting on the EK-RA2L2, and is driven by FreeRTOS.
+
+This FreeRTOS application combines USB terminal control with Wi-Fi status reporting on the EK-RA2L2. A PC terminal controls the board's three LEDs through USBFS CDC, while a DA16200 Wi-Fi module sends their states to a Python-hosted webpage through HTTP GET requests. The application uses FSP 6.6.0 and is configured to fit within the RA2L2's 16 KB SRAM.
+
+## Application overview
+
+| Component | Implementation and purpose |
+|---|---|
+| USB console | `usb_thread_entry.c` opens the USB CDC virtual COM port, handles USB events and CDC requests, processes menu selections, and sends terminal feedback. `r_usb_pcdc_descriptor.c` supplies the USB descriptors. |
+| LED and Wi-Fi task | `wifi_thread_entry.c` receives commands, maintains the three LED states, toggles GPIOs, and initiates connection and reporting operations. |
+| Network functions | `wifi_config.c/.h` manage access-point credentials, Wi-Fi initialization, HTTP client initialization, status requests, and connection-result text. |
+| DA16200 interface | FSP's `rm_wifi_da16xxx`, `rm_at_transport_da16xxx_uart`, `rm_http_onchip_da16xxx`, and `r_sci_uart` provide Wi-Fi control, UART AT-command transport, and HTTP client access. SCI0 uses 115200 baud, 8-N-1, with P101 for TX and P100 for RX. The DA16200 handles the network and HTTP protocols. |
+| Shared interface | `usb_wifi_interface.h` defines command characters and terminal messages. Generated FSP files configure the threads, queues, semaphore, peripherals, and pins. |
+| Host application | A Python HTTP server accepts the LED-state updates and provides the webpage for the demonstration. Its source is not included in this repository. |
+
+### Terminal commands
+
+The terminal menu uses the following commands. LED control works before Wi-Fi is connected; connection enables network reporting.
+
+| Key | Action | GPIO |
+|---|---|---|
+| `0` | Toggle blue LED | P204 |
+| `1` | Toggle green LED | P304 |
+| `2` | Toggle red LED | P303 |
+| `3` | Connect to Wi-Fi and enable LED reporting | — |
+
+### Command processing
+
+Command processing uses two application threads. The USB thread receives event pointers through `g_usb_queue` (16 entries, 4 bytes each). It forwards a valid menu command through `g_wifi_queue` (8 entries, 1 byte each), then waits on the binary semaphore `g_led_sem`. The Wi-Fi thread receives the command and performs the requested operation. The USB thread owns all terminal transmissions, and USB write-complete events indicate when another transmission can begin.
+
+For an LED command, the Wi-Fi thread changes the selected GPIO and gives `g_led_sem` so the USB thread can print confirmation. It then attempts to report all three LED states. The semaphore therefore acknowledges the local LED operation; HTTP transmission follows that acknowledgment.
+
+For command `3`, the Wi-Fi thread initializes the module with `WIFI_On()`, joins the configured access point using `WIFI_ConnectAP()`, and opens the on-chip HTTP client with `RM_HTTP_DA16XXX_Open()`. It sends an initial LED-state update and prepares terminal feedback containing the connection result, assigned IP address, and initial reporting result before releasing the semaphore.
+
+### HTTP reporting
+
+HTTP reporting is triggered by LED changes. Once the HTTP client is open, `RM_HTTP_DA16XXX_Send()` sends a GET request containing a complete state snapshot, for example:
+
+```text
+http://<server-ip>:8000/update?blue=1&green=0&red=1
+```
+
+The query parameters carry the stored LED states as `0` or `1`. This lets the server display the complete current LED state from each successful update. Reports occur on connection and subsequent LED toggles; the firmware does not run a periodic reporting loop.
+
+### SRAM usage
+
+SRAM usage is controlled through buffer sizing and configuration. The Wi-Fi command TX/RX buffers and UART transport RX buffer are each 512 bytes. HTTP requests use a 128-byte buffer, and a 256-byte response buffer is reused for connection-result text. USB uses an 8-byte receive buffer and aligned constant menu strings stored in flash. USB DMA/DTC support and FreeRTOS software timers are disabled. Application tasks, queues, and the completion semaphore use static allocation; the USB and Wi-Fi task stacks are 1,024 and 1,280 bytes, respectively, with a 4,600-byte FreeRTOS heap for dynamic allocations.
+
+The Debug build's map file places the end of allocated task-stack storage at 15,968 bytes from the SRAM base, approximately 97.5% of 16 KB, before final linker alignment. This includes the reserved FreeRTOS heap and describes the linked memory layout, rather than measured runtime heap or stack usage.
+
+### USB suspend handling
+
+The USB thread enters Software Standby through `r_lpm` when it receives a suspend event. USBFS is configured as the standby wake source, and the resume handler restores the application's USB attachment state.
+
+## Project setup and configuration
+
+This project is a Renesas RA CMake project generated by the RA Smart Configurator (RASC). The FSP configuration is stored in `configuration.xml`; RASC generates `ra/`, `ra_gen/`, and `ra_cfg/` from it.
+
+### Application settings
+
+Set the following in [`src/wifi_config.h`](src/wifi_config.h) before building:
+
+| Setting | Purpose |
+|---|---|
+| `WIFI_SSID` | Access-point SSID |
+| `WIFI_PASSWORD` | Access-point password |
+| `WIFI_SECURITY` | Security type, for example `eWiFiSecurityWPA2` |
+| `STATUS_SERVER` | Base URL of the Python server, for example `http://192.168.1.66:8000` |
+
+Do not commit real Wi-Fi credentials to this repository.
+
+### Building via CLI
+
+Check the `CMakePresets.json` file for preset configuration. Define the related environment variables or create your own `CMakeUserPresets.json` file for your system. Required variables:
+
+- `RASC_EXE_PATH`: path of the FSP Smart Configurator
+- `ARM_LLVM_TOOLCHAIN_PATH`: path of the toolchain's binary directory
+- If Ninja is not in the `PATH`, `CMAKE_MAKE_PROGRAM` should point to the Ninja executable file path
+
+Configure with `cmake --preset <config preset name>`:
+
+```sh
+cmake --preset DebugCI
+cmake --preset ReleaseCI
+```
+
+Build with `cmake --build --preset <build preset name>`:
+
+```sh
+cmake --build --preset DebugCI
+cmake --build --preset ReleaseCI
+```
+
+Build output is written to `build/Debug` or `build/Release`.
+
+### Configuring via Visual Studio Code presets
+
+- Define the environment variables needed in `CMakePresets.json`, or, if the Renesas Platform Extension is installed, let it create `CMakeUserPresets.json` for your environment.
+- Select a configure preset and click **Build** in the VS Code status bar.
+
+### Configuring via Visual Studio Code kits
+
+- Set `ARM_LLVM_TOOLCHAIN_PATH` as an environment variable before starting VS Code, or set it in `.vscode/cmake-kits.json`.
+- Set `RASC_EXE_PATH` to the path of the FSP Smart Configurator.
+- Select one of the **ARM LLVM** kits (`ARM LLVM - Ninja`, `ARM LLVM - MinGW Makefiles`, or `ARM LLVM - Unix Makefiles`) in the VS Code status bar.
+- Avoid spaces in the toolchain and project paths, as CMake and the other build tools might interpret them as delimiters.
+
+Example:
+
+```bat
+set ARM_LLVM_TOOLCHAIN_PATH=/your/toolchain/bin/path
+set RASC_EXE_PATH=/your/smart/configurator/path
+cd /your/project/location
+code .
+```
+
+Alternatively, open the workspace file with `code RA2L2_USB_WiFi.code-workspace`. Then click **Build** in the VS Code status bar.
+
+### Switching between CMake kits and presets in VS Code
+
+- Set `"cmake.useCMakePresets"` to `"never"` to enable kits.
+- Set `"cmake.useCMakePresets"` to `"always"` to enable presets.
+- Set `"cmake.useCMakePresets"` to `"auto"` to enable presets when preset JSON files exist.
+
+This project's `.vscode/settings.json` sets `"cmake.useCMakePresets"` to `"never"`, so VS Code uses kits by default.
+
+## Running the demonstration
+
+1. Configure `WIFI_SSID`, `WIFI_PASSWORD`, `WIFI_SECURITY`, and `STATUS_SERVER` in `wifi_config.h`.
+2. Build the project and flash it to the EK-RA2L2.
+3. Start the Python server at an address the DA16200 can reach.
+4. Open the board's USB virtual COM port in Tera Term.
+5. Press an unassigned key to display the menu.
+6. Use `0`–`2` for local LED control, and press `3` to connect and enable HTTP reporting.
