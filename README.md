@@ -65,9 +65,7 @@ Set the following in [`src/wifi_config.h`](src/wifi_config.h) before building:
 | `WIFI_SSID` | Access-point SSID |
 | `WIFI_PASSWORD` | Access-point password |
 | `WIFI_SECURITY` | Security type, for example `eWiFiSecurityWPA2` |
-| `STATUS_SERVER` | Base URL of the Python server, for example `http://192.168.1.66:8000` |
-
-Do not commit real Wi-Fi credentials to this repository.
+| `STATUS_SERVER` | Base URL of the Python server |
 
 ### Building via CLI
 
