@@ -8,9 +8,11 @@ This FreeRTOS application combines USB terminal control with Wi-Fi status report
 
 [`usb_thread_entry.c`](src/usb_thread_entry.c) manages the PC terminal interface using a 1,024-byte stack. At startup, it opens USBFS as a CDC virtual COM port and initializes the low-power driver. USB descriptors are defined in [`r_usb_pcdc_descriptor.c`](src/r_usb_pcdc_descriptor.c). The thread then waits on `g_usb_queue`, where `usb_callback()` posts events for configuration, data transfers, control requests, and connection changes.
 
-Once the USB driver is configured, the thread starts asynchronous reads into an 8-byte buffer. Each completed read schedules another read and passes the first received character to `handle_usb_command()` when USB transmission is ready. Commands `0`-`2` select an LED, and `3` requests a Wi-Fi connection; other characters display the menu.
+Once the USB driver is configured, the thread starts asynchronous reads into an 8-byte buffer. Each completed read copies the first received character before scheduling the next read into the same buffer, then passes that copy to `handle_usb_command()` when USB transmission is ready. Commands `0`-`2` select an LED, and `3` requests a Wi-Fi connection; other characters display the menu.
 
-For a valid command, the USB Thread sends the command byte through `g_wifi_queue` and blocks on `g_led_sem`. The Wi-Fi Thread releases this semaphore when the LED has been toggled or the connection result is ready. The USB Thread then prints the appropriate confirmation, retrieving connection feedback through `wifi_app_result_get()`.
+For an LED command, the USB Thread toggles the LED itself through `led_toggle()`, which updates that LED's bit in `g_led_levels` and its GPIO output. It then sends the command byte through `g_wifi_queue` without waiting, so the Wi-Fi Thread can report the new states, and prints the confirmation. Local LED control therefore works before Wi-Fi is connected, and confirmation indicates that the physical LED change has occurred.
+
+For the connect command, the USB Thread sends the command byte and blocks on `g_connect_sem` until the Wi-Fi Thread releases it with the connection result ready. It then prints that result, retrieved through `wifi_app_result_get()`.
 
 All application USB writes pass through `print_to_console()`. A transmit-ready flag is cleared when a write begins and restored by `USB_STATUS_WRITE_COMPLETE`, preventing overlapping terminal messages. Commands received while transmission is busy are ignored, so terminal input should be entered one selection at a time.
 
@@ -18,10 +20,10 @@ The thread also services CDC line-coding and control-line requests. These virtua
 
 ### Wi-Fi Thread
 
-[`wifi_thread_entry.c`](src/wifi_thread_entry.c) uses a 1,280-byte stack and blocks on `g_wifi_queue` until a command arrives. It maintains the blue, green, and red LED states and performs GPIO updates and network operations sequentially.
+[`wifi_thread_entry.c`](src/wifi_thread_entry.c) uses a 1,280-byte stack and blocks on `g_wifi_queue` until a command arrives. It performs network operations sequentially, reading the blue, green, and red LED states from the USB Thread through `get_led_levels()`.
 
-- **LED command:** `led_toggle()` updates the selected LED's stored state and GPIO output. The thread immediately releases `g_led_sem`, allowing USB confirmation before attempting an HTTP update containing all three LED states. Local LED control therefore works before Wi-Fi is connected, and confirmation indicates that the physical LED change has occurred.
-- **Connect command:** `wifi_connect()` initializes the DA16200 if needed, joins the configured access point if disconnected, obtains its network configuration through DHCP, and opens the on-chip HTTP client. It then attempts an initial LED report and prepares feedback containing the connection result, assigned IP address, and reporting outcome before releasing the semaphore.
+- **LED command:** The USB Thread has already toggled the LED and printed its confirmation, so the Wi-Fi Thread only reads the current states through `get_led_levels()` and attempts an HTTP update containing all three. Because the states are read when the command is processed, each report reflects the latest LED states, even if several toggles were queued.
+- **Connect command:** `wifi_connect()` initializes the DA16200 if needed, joins the configured access point if disconnected, obtains its network configuration through DHCP, and opens the on-chip HTTP client. It then attempts an initial LED report and prepares feedback containing the connection result, assigned IP address, and reporting outcome before releasing `g_connect_sem`.
 
 [`wifi_config.c`](src/wifi_config.c) implements the connection and reporting helpers. FSP's `r_sci_uart` and `rm_at_transport_da16xxx_uart` carry AT commands over SCI0 at **115200 baud, 8-N-1**, using **P101 TX** and **P100 RX**. `rm_wifi_da16xxx` manages Wi-Fi connectivity, while `rm_http_onchip_da16xxx` accesses the DA16200's HTTP client. Network protocol processing runs on the module.
 
@@ -31,7 +33,7 @@ Once the HTTP client is initialized, `wifi_send_led_status()` builds a URL conta
 http://<server-ip>:8000/update?blue=1&green=0&red=1
 ```
 
-Reports occur during connection setup and after subsequent LED toggles. Each request contains a complete state snapshot for the Python server. HTTP operations run within the Wi-Fi thread, so a pending transaction can delay the next queued command.
+Reports occur during connection setup and after subsequent LED toggles. Each request contains a complete state snapshot for the Python server. HTTP operations run within the Wi-Fi thread, so a pending transaction can delay the next queued command. LED toggles happen in the USB thread and are not delayed by pending reports.
 
 ### Shared components and SRAM
 
@@ -41,11 +43,11 @@ Reports occur during connection setup and after subsequent LED toggles. Each req
 |---|---|---|
 | `g_usb_queue` | 16 event pointers | USB callback to USB thread |
 | `g_wifi_queue` | 8 command bytes | USB thread to Wi-Fi thread |
-| `g_led_sem` | Binary semaphore | Command acknowledgement |
+| `g_connect_sem` | Binary semaphore | Connect command acknowledgement |
 
 The Wi-Fi command TX/RX buffers and UART transport RX buffer are each 512 bytes. HTTP uses a 128-byte request buffer and a 256-byte response buffer, reused for connection feedback. USB menu strings remain in flash. Application task stacks and RTOS objects are static; the FreeRTOS heap is 4,600 bytes. USB DMA/DTC and FreeRTOS software timers are disabled.
 
-The reference Debug map allocates 15,968 bytes before final linker alignment, approximately 97.5% of SRAM. This includes the reserved heap and describes the linked layout, not measured runtime heap or stack usage.
+The reference Debug map allocates 15,956 bytes before final linker alignment, approximately 97.5% of SRAM. This includes the reserved heap and describes the linked layout, not measured runtime heap or stack usage.
 
 ## Project setup and configuration
 

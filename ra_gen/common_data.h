@@ -42,7 +42,7 @@ extern const ioport_instance_t g_ioport;
 extern ioport_instance_ctrl_t g_ioport_ctrl;
 extern QueueHandle_t g_usb_queue;
 extern QueueHandle_t g_wifi_queue;
-extern SemaphoreHandle_t g_led_sem;
+extern SemaphoreHandle_t g_connect_sem;
 void g_common_init(void);
 FSP_FOOTER
 #endif /* COMMON_DATA_H_ */

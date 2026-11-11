@@ -8,7 +8,8 @@
 #ifndef USB_WIFI_INTERFACE_H_
 #define USB_WIFI_INTERFACE_H_
 
-/* Commands the USB thread posts to g_wifi_queue. The WiFi thread gives g_led_sem when it has finished each one. */
+/* Commands the USB Thread posts to g_wifi_queue. LED commands are posted after the USB Thread has toggled the 
+ * appropriate LED. For WIFI_APP_CMD_CONNECT, the WiFi Thread gives g_connect_sem when the result is ready. */
 #define WIFI_APP_CMD_LED_BLUE     ('0')
 #define WIFI_APP_CMD_LED_GREEN    ('1')
 #define WIFI_APP_CMD_LED_RED      ('2')
@@ -24,11 +25,14 @@
 #define GREEN_LED "Toggled Green LED \r\n\r\n"
 #define RED_LED "Toggled Red LED \r\n\r\n"
 
+#define LED_COUNT (3U) // Number of on-board LEDs
 #define LINE_CODING_LENGTH (0x07U)
 #define READ_BUF_SIZE (8U)
 #define NUM_STRING_DESCRIPTOR (7U)
 
 /* Returns WiFi result for the USB Thread to print */
 char * wifi_app_result_get(void);
+/* Returns the current state of the LEDs */
+uint8_t get_led_levels(void);
 
 #endif /* USB_WIFI_INTERFACE_H_ */

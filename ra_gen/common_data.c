@@ -154,9 +154,9 @@ QueueHandle_t g_wifi_queue;
                 uint8_t g_wifi_queue_queue_memory[1 * 8];
                 #endif
                 void rtos_startup_err_callback(void * p_instance, void * p_data);
-SemaphoreHandle_t g_led_sem;
+SemaphoreHandle_t g_connect_sem;
                 #if 1
-                StaticSemaphore_t g_led_sem_memory;
+                StaticSemaphore_t g_connect_sem_memory;
                 #endif
                 void rtos_startup_err_callback(void * p_instance, void * p_data);
 void g_common_init(void) {
@@ -192,13 +192,13 @@ g_wifi_queue =
                 if (NULL == g_wifi_queue) {
                 rtos_startup_err_callback(g_wifi_queue, 0);
                 }
-g_led_sem =
+g_connect_sem =
                 #if 1
-                xSemaphoreCreateBinaryStatic(&g_led_sem_memory);
+                xSemaphoreCreateBinaryStatic(&g_connect_sem_memory);
                 #else
                 xSemaphoreCreateBinary();
                 #endif
-                if (NULL == g_led_sem) {
-                rtos_startup_err_callback(g_led_sem, 0);
+                if (NULL == g_connect_sem) {
+                rtos_startup_err_callback(g_connect_sem, 0);
                 }
 }

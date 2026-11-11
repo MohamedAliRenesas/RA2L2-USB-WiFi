@@ -148,12 +148,12 @@
       <configSetting altId="p500.gpio_pupd.gpio_pupd_ip_up" configurationId="p500.gpio_pupd"/>
       <configSetting altId="p501.gpio_mode.gpio_mode_an" configurationId="p501.gpio_mode"/>
       <configSetting altId="p502.gpio_mode.gpio_mode_an" configurationId="p502.gpio_mode"/>
-      <configSetting altId="sci0.rxd0.p100" configurationId="sci0.rxd0" peripheral="SCI0"/>
-      <configSetting altId="sci0.txd0.p101" configurationId="sci0.txd0" peripheral="SCI0"/>
+      <configSetting altId="sci0.rxd0.p100" configurationId="sci0.rxd0" isUsedByDriver="true" peripheral="SCI0"/>
+      <configSetting altId="sci0.txd0.p101" configurationId="sci0.txd0" isUsedByDriver="true" peripheral="SCI0"/>
       <configSetting altId="system.md.p201" configurationId="system.md" peripheral="SYSTEM"/>
       <configSetting altId="system.vrefh0.p010" configurationId="system.vrefh0" peripheral="SYSTEM"/>
       <configSetting altId="system.vrefl0.p011" configurationId="system.vrefl0" peripheral="SYSTEM"/>
-      <configSetting altId="usbfs.usb_vbus.p407" configurationId="usbfs.usb_vbus" peripheral="USB FS"/>
+      <configSetting altId="usbfs.usb_vbus.p407" configurationId="usbfs.usb_vbus" isUsedByDriver="true" peripheral="USB FS"/>
     </pincfg>
   </raPinConfiguration>
 </raConfiguration>

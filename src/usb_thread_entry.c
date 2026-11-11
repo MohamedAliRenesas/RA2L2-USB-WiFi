@@ -1,7 +1,8 @@
-/* The USB Thread opens the USB peripheral as a CDC virtual COM port, reads user commands from the PC terminal,
- * forwards them to the WiFi Thread through g_wifi_queue, waits on g_led_sem until the WiFi Thread has finished, and
- * prints the menu and command results back to the terminal. USB events are received from usb_callback() through g_usb_queue.
- * The USB Thread is the only thread that writes to USB. */
+/* The USB Thread opens the USB peripheral as a CDC virtual COM port, reads user commands from the PC terminal, toggles
+ * LEDs on request, forwards each command to the WiFi Thread through g_wifi_queue, waits on g_connect_sem only for the
+ * connect command, and prints the menu and command results back to the terminal. LED states are kept in g_led_levels,
+ * which the WiFi Thread reads through get_led_levels() to report them. USB events are received from usb_callback()
+ * through g_usb_queue. The USB Thread is the only thread that writes to USB. */
 #include <string.h>
 #include "usb_thread.h"
 #include "usb_wifi_interface.h"
@@ -9,6 +10,13 @@
 /* Private function prototypes */
 static void print_to_console(const char *p_data);
 static void handle_usb_command(uint8_t user_input);
+static void led_toggle(uint32_t led);
+
+/* Blue, green, red LED pins */
+static const bsp_io_port_pin_t g_led_pins[LED_COUNT] = {BSP_IO_PORT_02_PIN_04, BSP_IO_PORT_03_PIN_04,
+		BSP_IO_PORT_03_PIN_03};
+/* LED pin states: Bit 0 = Blue, Bit 1 = Green, Bit 2 = Red */
+static uint8_t g_led_levels = 0;
 
 /* USB descriptors defined in r_usb_pcdc_descriptor.c */
 extern uint8_t g_apl_device[];
@@ -72,14 +80,14 @@ void usb_thread_entry(void *pvParameters) {
 
 			case USB_STATUS_READ_COMPLETE: // A USB read transaction has completed
 				if (b_usb_attach) { // Ensure USB connection remains established
+					uint8_t key = g_buf[0]; // Copy before next read overwrites g_buf
 					err = R_USB_Read(&g_basic0_ctrl, g_buf, READ_BUF_SIZE, USB_CLASS_PCDC); // Start next USB read
 					if (err != FSP_SUCCESS) {
 						while (1);
 					}
 					/* Check readiness of USB write */
 					if ((g_usb_tx_ready) && (event_info.data_size > 0)) {
-						handle_usb_command(g_buf[0]); // Handle user input
-						memset(g_buf, 0, sizeof(g_buf));
+						handle_usb_command(key); // Handle user input
 					}
 				}
 				break;
@@ -134,7 +142,6 @@ void usb_thread_entry(void *pvParameters) {
 			default:
 				break;
 		}
-		vTaskDelay(1);
 	}
 }
 
@@ -148,26 +155,27 @@ static void handle_usb_command(uint8_t user_input) {
 
 	/* User requests connecting to WiFi */
 	if (WIFI_APP_CMD_CONNECT == user_input) {
-		xQueueSend(g_wifi_queue, &user_input, 0); // Post command to WiFi Thread
-		xSemaphoreTake(g_led_sem, portMAX_DELAY); // Block on acquisition of led semaphore
-		print_to_console(wifi_app_result_get()); // Print result of attempted WiFi connection
+		if(pdPASS == xQueueSend(g_wifi_queue, &user_input, 0)) { // Post command to WiFi Thread
+		   xSemaphoreTake(g_connect_sem, portMAX_DELAY); // Only wait if WiFi Thread got the command
+		   print_to_console(wifi_app_result_get()); // Print result of attempted WiFi connection
+		}
 		return;
 	}
 
 	/* User requested LED toggle */
-	if ((user_input >= '0') && (user_input <= '2')) {
-		xQueueSend(g_wifi_queue, &user_input, 0);
-		xSemaphoreTake(g_led_sem, portMAX_DELAY);
+	if ((user_input >= WIFI_APP_CMD_LED_BLUE) && (user_input <= WIFI_APP_CMD_LED_RED)) {
+		led_toggle((uint32_t)(user_input - WIFI_APP_CMD_LED_BLUE)); // Toggle the requested LED
+		xQueueSend(g_wifi_queue, &user_input, 0); // Post command to WiFi Thread
 
 		/* Update message pointer to point to message corresponding to requested LED */
 		switch (user_input) {
-			case '0':
+			case WIFI_APP_CMD_LED_BLUE:
 				p_message = g_msg_blue;
 				break;
-			case '1':
+			case WIFI_APP_CMD_LED_GREEN:
 				p_message = g_msg_green;
 				break;
-			case '2':
+			case WIFI_APP_CMD_LED_RED:
 				p_message = g_msg_red;
 				break;
 			default:
@@ -186,7 +194,7 @@ static void print_to_console(const char *p_data) {
 	g_usb_tx_ready = false;
 	err = R_USB_Write(&g_basic0_ctrl, (uint8_t*) p_data, len, USB_CLASS_PCDC); // Write string to USB
 	if (err != FSP_SUCCESS) {
-		while (1);
+		g_usb_tx_ready = true; // Nothing was sent, so drop the message and set the ready flag
 	}
 }
 
@@ -196,4 +204,18 @@ void usb_callback(usb_event_info_t *p_api_event, usb_hdl_t cur_task, usb_onoff_t
 	(void) cur_task;
 	/* Send USB event to USB Thread */
 	xQueueSend(g_usb_queue, (const void* )&p_api_event, (TickType_t ) (0));
+}
+
+/* Toggles the requested LED and records its new level in g_led_levels */
+static void led_toggle(uint32_t led) {
+	 g_led_levels ^= (uint8_t) (1U << led);
+
+    R_BSP_PinAccessEnable();
+    R_BSP_PinWrite(g_led_pins[led], (bsp_io_level_t) ((g_led_levels >> led) & 1U));
+    R_BSP_PinAccessDisable();
+}
+
+/* Returns the current levels of all LEDs */
+uint8_t get_led_levels(void) {
+	return g_led_levels;
 }

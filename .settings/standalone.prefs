@@ -1,4 +1,4 @@
-#Mon Oct 19 14:19:10 EDT 2026
+#Wed Nov 11 13:13:29 EST 2026
 com.renesas.cdt.ddsc.content/com.renesas.cdt.ddsc.content.defaultlinkerscript=script/fsp.lld
 com.renesas.cdt.ddsc.contentgen.options/options/suppresswarningspaths=ra/arm,ra/aws
 com.renesas.cdt.ddsc.contentgen.options/options/toolchainversion=21.1.1
@@ -46,3 +46,10 @@ com.renesas.cdt.ddsc.packs.componentfiles/Renesas\#\#Projects\#\#all\#\#common\#
 com.renesas.cdt.ddsc.packs.componentfiles/Renesas\#\#Projects\#\#all\#\#common\#\#\#\#6.6.0/libraries=
 com.renesas.cdt.ddsc.project.standalone.projectgenerationoptions/ideProjectType=CMAKE
 com.renesas.cdt.ddsc.project.standalone.projectgenerationoptions/isCpp=false
+com.renesas.cdt.ddsc.settingseditor/com.renesas.cdt.ddsc.settingseditor.active_page=SWPConfigurator
+com.renesas.cdt.ddsc.threads.configurator/collapse/module.driver.at_transport_da16xxx_uart.1992222415=false
+com.renesas.cdt.ddsc.threads.configurator/collapse/module.driver.basic_on_usb_typec.303492650=false
+com.renesas.cdt.ddsc.threads.configurator/collapse/module.driver.http_onchip_da16xxx.1920179957=false
+com.renesas.cdt.ddsc.threads.configurator/collapse/module.driver.pcdc_on_usb.1503550589=false
+com.renesas.cdt.ddsc.threads.configurator/collapse/module.driver.uart_on_sci_uart.373943373=false
+com.renesas.cdt.ddsc.threads.configurator/collapse/module.driver.wifi_da16xxx.1092911982=false
