@@ -14,7 +14,6 @@
 #define WIFI_PASSWORD               "USER_PASSWORD" // Declare WiFi password
 #define WIFI_SECURITY               (eWiFiSecurityWPA2) // Declare WiFi security type
 
-#define WIFI_CONNECT_ATTEMPTS       (2U) // Number of WiFi connection attempts
 #define HTTP_REQ_BUF_SIZE           (128U) // Holds "AT+NWHTCH=<url>,get\r"
 #define HTTP_RESP_BUF_SIZE          (256U) // Raw DA16200 reply; afterwards reused for the text sent to the terminal
 

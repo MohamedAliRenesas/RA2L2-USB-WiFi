@@ -297,6 +297,10 @@ FSP Configuration
     Parameter Checking: Default (BSP)
     Standby Limit: Disabled
     
+  Module "Watchdog (r_wdt)"
+    Parameter Checking: Default (BSP)
+    Register Start NMI Support: Disabled
+    
   FreeRTOS
     General: Custom FreeRTOSConfig.h: 
     General: Use Preemption: Enabled
@@ -486,6 +490,16 @@ FSP Configuration
       Deep Standby Options (Not available on every MCU): Cancel Sources: 
       Deep Standby Options (Not available on every MCU): Cancel Edges: 
       Deep Standby Options (Not available on every MCU): Soft Start Mode: Not Available
+      
+    Instance "g_wdt0 Watchdog (r_wdt)"
+      Name: g_wdt0
+      Timeout: 16,384 Cycles
+      Clock Division Ratio: PCLK/8192
+      Window Start Position: 100 (Window Position Not Specified)
+      Window End Position: 0 (Window Position Not Specified)
+      Reset Control: Reset Output
+      Stop Control: WDT Count Enabled in Low Power Mode
+      NMI Callback: NULL
       
   Object "g_usb_queue Queue"
     Symbol: g_usb_queue

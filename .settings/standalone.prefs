@@ -1,4 +1,4 @@
-#Wed Nov 11 13:13:29 EST 2026
+#Tue Nov 17 16:00:24 EST 2026
 com.renesas.cdt.ddsc.content/com.renesas.cdt.ddsc.content.defaultlinkerscript=script/fsp.lld
 com.renesas.cdt.ddsc.contentgen.options/options/suppresswarningspaths=ra/arm,ra/aws
 com.renesas.cdt.ddsc.contentgen.options/options/toolchainversion=21.1.1
@@ -32,6 +32,8 @@ com.renesas.cdt.ddsc.packs.componentfiles/Renesas\#\#HAL\ Drivers\#\#all\#\#r_us
 com.renesas.cdt.ddsc.packs.componentfiles/Renesas\#\#HAL\ Drivers\#\#all\#\#r_usb_basic\#\#\#\#6.6.0/libraries=
 com.renesas.cdt.ddsc.packs.componentfiles/Renesas\#\#HAL\ Drivers\#\#all\#\#r_usb_pcdc\#\#\#\#6.6.0/all=3990771539,ra/fsp/inc/api/r_usb_pcdc_api.h|2761099136,ra/fsp/src/r_usb_pcdc/r_usb_pcdc_descriptor.c.template|639458532,ra/fsp/src/r_usb_pcdc/src/r_usb_pcdc_driver.c|1031911298,ra/fsp/src/r_usb_pcdc/src/inc/r_usb_pcdc.h
 com.renesas.cdt.ddsc.packs.componentfiles/Renesas\#\#HAL\ Drivers\#\#all\#\#r_usb_pcdc\#\#\#\#6.6.0/libraries=
+com.renesas.cdt.ddsc.packs.componentfiles/Renesas\#\#HAL\ Drivers\#\#all\#\#r_wdt\#\#\#\#6.6.0/all=1535277341,ra/fsp/inc/api/r_wdt_api.h|170554913,ra/fsp/inc/instances/r_wdt.h|3042241372,ra/fsp/src/r_wdt/r_wdt.c
+com.renesas.cdt.ddsc.packs.componentfiles/Renesas\#\#HAL\ Drivers\#\#all\#\#r_wdt\#\#\#\#6.6.0/libraries=
 com.renesas.cdt.ddsc.packs.componentfiles/Renesas\#\#HAL\ Drivers\#\#all\#\#rm_at_transport_da16xxx_uart\#\#\#\#6.6.0/all=1934728291,ra/fsp/inc/api/r_uart_api.h|936720369,ra/fsp/inc/instances/rm_at_transport_da16xxx_uart.h|1338562725,ra/fsp/inc/instances/rm_at_transport_da16xxx.h|194214221,ra/fsp/src/rm_at_transport_da16xxx_uart/rm_at_transport_da16xxx_uart.c
 com.renesas.cdt.ddsc.packs.componentfiles/Renesas\#\#HAL\ Drivers\#\#all\#\#rm_at_transport_da16xxx_uart\#\#\#\#6.6.0/libraries=
 com.renesas.cdt.ddsc.packs.componentfiles/Renesas\#\#HAL\ Drivers\#\#all\#\#rm_http_onchip_da16xxx\#\#\#\#6.6.0/all=3267841566,ra/fsp/inc/instances/rm_http_onchip_da16xxx.h|3868478563,ra/fsp/src/rm_http_onchip_da16xxx/rm_http_onchip_da16xxx.c

@@ -1,28 +1,28 @@
 # RA2L2 USB WiFi Application
 
-This FreeRTOS application combines USB terminal control with Wi-Fi status reporting on the EK-RA2L2. A PC terminal controls the board's three LEDs through USBFS CDC, while a DA16200 module reports their states to a Python-hosted webpage through HTTP GET requests. The project uses FSP 6.6.0, with USB and Wi-Fi functionality optimized to fit within the RA2L2's 16 KB SRAM.
+This FreeRTOS application combines USB terminal control with Wi-Fi status reporting on the EK-RA2L2. A PC terminal controls the board's three LEDs through USBFS CDC, while a DA16200 module reports their states to a Python-hosted webpage through HTTP GET requests. The project uses FSP 6.6.0, with USB and Wi-Fi functionality optimized to fit within the RA2L2's 16 KB SRAM. A watchdog timer resets the board if the USB Thread stalls or hits an unrecoverable error.
 
 ## Application structure
 
 ### USB Thread
 
-[`usb_thread_entry.c`](src/usb_thread_entry.c) manages the PC terminal interface using a 1,024-byte stack. At startup, it opens USBFS as a CDC virtual COM port and initializes the low-power driver. USB descriptors are defined in [`r_usb_pcdc_descriptor.c`](src/r_usb_pcdc_descriptor.c). The thread then waits on `g_usb_queue`, where `usb_callback()` posts events for configuration, data transfers, control requests, and connection changes.
+[`usb_thread_entry.c`](src/usb_thread_entry.c) manages the PC terminal interface using a 1,024-byte stack. At startup, it opens and starts the watchdog timer (WDT), opens USBFS as a CDC virtual COM port, and initializes the low-power driver. USB descriptors are defined in [`r_usb_pcdc_descriptor.c`](src/r_usb_pcdc_descriptor.c). The thread then waits on `g_usb_queue`, where `usb_callback()` posts events for configuration, data transfers, control requests, and connection changes. Each wait times out after `USB_EVENT_WAIT_MS` (4.5 seconds), and the thread refreshes the WDT on every pass of its event loop, so the WDT is refreshed even while USB is idle.
 
 Once the USB driver is configured, the thread starts asynchronous reads into an 8-byte buffer. Each completed read copies the first received character before scheduling the next read into the same buffer, then passes that copy to `handle_usb_command()` when USB transmission is ready. Commands `0`-`2` select an LED, and `3` requests a Wi-Fi connection; other characters display the menu.
 
 For an LED command, the USB Thread toggles the LED itself through `led_toggle()`, which updates that LED's bit in `g_led_levels` and its GPIO output. It then sends the command byte through `g_wifi_queue` without waiting, so the Wi-Fi Thread can report the new states, and prints the confirmation. Local LED control therefore works before Wi-Fi is connected, and confirmation indicates that the physical LED change has occurred.
 
-For the connect command, the USB Thread sends the command byte and blocks on `g_connect_sem` until the Wi-Fi Thread releases it with the connection result ready. It then prints that result, retrieved through `wifi_app_result_get()`.
+For the connect command, the USB Thread sends the command byte and waits on `g_connect_sem` until the Wi-Fi Thread releases it with the connection result ready. It refreshes the WDT when the wait begins, then waits in `WDT_REFRESH_MS` (1 second) steps, refreshing the WDT after each one, and calls `error_handler()` if no result arrives within `MAX_CONNECT_TIMEOUT_MS` (300 seconds). This limit also covers time the Wi-Fi Thread spends on LED reports queued ahead of the connect command. Once the semaphore is released, the USB Thread prints the result, retrieved through `wifi_app_result_get()`.
 
 All application USB writes pass through `print_to_console()`. A transmit-ready flag is cleared when a write begins and restored by `USB_STATUS_WRITE_COMPLETE`, preventing overlapping terminal messages. Commands received while transmission is busy are ignored, so terminal input should be entered one selection at a time.
 
-The thread also services CDC line-coding and control-line requests. These virtual COM settings are separate from the DA16200 UART configuration. On USB suspend, it enters Software Standby through `r_lpm`, with USBFS configured as the wake source. The USB resume event restores the application's attachment state.
+The thread also services CDC line-coding and control-line requests. These virtual COM settings are separate from the DA16200 UART configuration. On USB suspend, it enters Software Standby through `r_lpm`, with USBFS configured as the wake source. PCLKB, which clocks the WDT, stops in Software Standby, so the WDT does not count while the bus is suspended. The USB resume event restores the application's attachment state.
 
 ### Wi-Fi Thread
 
 [`wifi_thread_entry.c`](src/wifi_thread_entry.c) uses a 1,280-byte stack and blocks on `g_wifi_queue` until a command arrives. It performs network operations sequentially, reading the blue, green, and red LED states from the USB Thread through `get_led_levels()`.
 
-- **LED command:** The USB Thread has already toggled the LED and printed its confirmation, so the Wi-Fi Thread only reads the current states through `get_led_levels()` and attempts an HTTP update containing all three. Because the states are read when the command is processed, each report reflects the latest LED states, even if several toggles were queued.
+- **LED command:** The USB Thread has already toggled the LED and printed its confirmation, so the Wi-Fi Thread only reads the current states through `get_led_levels()` and attempts an HTTP update containing all three. Because the states are read when the command is processed, each report reflects the latest LED states, even if several toggles were queued. If the HTTP client is open but the report fails, the Wi-Fi Thread calls `WIFI_Disconnect()` to clear the driver's cached IP address, then `wifi_connect()` to rejoin the access point and resend the states. `RM_HTTP_DA16XXX_Send()` returns the same error whether the access point or the status server is unreachable, so failed reports to a stopped server also trigger a reconnect.
 - **Connect command:** `wifi_connect()` initializes the DA16200 if needed, joins the configured access point if disconnected, obtains its network configuration through DHCP, and opens the on-chip HTTP client. It then attempts an initial LED report and prepares feedback containing the connection result, assigned IP address, and reporting outcome before releasing `g_connect_sem`.
 
 [`wifi_config.c`](src/wifi_config.c) implements the connection and reporting helpers. FSP's `r_sci_uart` and `rm_at_transport_da16xxx_uart` carry AT commands over SCI0 at **115200 baud, 8-N-1**, using **P101 TX** and **P100 RX**. `rm_wifi_da16xxx` manages Wi-Fi connectivity, while `rm_http_onchip_da16xxx` accesses the DA16200's HTTP client. Network protocol processing runs on the module.
@@ -35,9 +35,31 @@ http://<server-ip>:8000/update?blue=1&green=0&red=1
 
 Reports occur during connection setup and after subsequent LED toggles. Each request contains a complete state snapshot for the Python server. HTTP operations run within the Wi-Fi thread, so a pending transaction can delay the next queued command. LED toggles happen in the USB thread and are not delayed by pending reports.
 
+### Watchdog timer and error handling
+
+The WDT instance `g_wdt0` is part of the USB Thread's configuration in `configuration.xml`:
+
+| Setting | Value |
+|---|---|
+| Start mode | Register start (OFS0 leaves the WDT stopped after reset) |
+| Clock | PCLKB / 8192, with PCLKB at 24 MHz |
+| Timeout | 16,384 cycles, about 5.59 seconds |
+| Refresh window | 100% to 0%, so a refresh is allowed at any time |
+| Timeout action | MCU reset |
+
+The USB Thread opens the WDT and starts it with its first `R_WDT_Refresh()` call. It is the only thread that refreshes the WDT, so the WDT supervises the USB Thread. The Wi-Fi Thread runs at a lower priority, so the USB Thread keeps refreshing the WDT while DA16200 operations are in progress. The refresh timing is set in [`usb_wifi_interface.h`](src/usb_wifi_interface.h):
+
+| Constant | Value | Purpose |
+|---|---|---|
+| `USB_EVENT_WAIT_MS` | 4,500 ms | Longest wait for a USB event before the event loop refreshes the WDT again |
+| `WDT_REFRESH_MS` | 1,000 ms | Refresh interval while waiting for a connection result |
+| `MAX_CONNECT_TIMEOUT_MS` | 300,000 ms | Longest connection wait before `error_handler()` is called |
+
+Failed FSP calls in the USB Thread, and connection waits that exceed `MAX_CONNECT_TIMEOUT_MS`, call `error_handler()`. It prints `Unexpected error occurred` to the terminal when USB is available, then toggles the red LED every half second. Because it does not refresh the WDT, the WDT resets the MCU within about 5.6 seconds and the application restarts. If `R_WDT_Open()` itself fails, the WDT never starts and the LED keeps blinking until the board is reset.
+
 ### Shared components and SRAM
 
-[`usb_wifi_interface.h`](src/usb_wifi_interface.h) defines command characters and terminal messages. Generated FSP code creates the application threads and these static synchronization objects:
+[`usb_wifi_interface.h`](src/usb_wifi_interface.h) defines command characters, terminal messages, and the WDT timing constants. Generated FSP code creates the application threads and these static synchronization objects:
 
 | Object | Capacity | Role |
 |---|---|---|
@@ -47,7 +69,7 @@ Reports occur during connection setup and after subsequent LED toggles. Each req
 
 The Wi-Fi command TX/RX buffers and UART transport RX buffer are each 512 bytes. HTTP uses a 128-byte request buffer and a 256-byte response buffer, reused for connection feedback. USB menu strings remain in flash. Application task stacks and RTOS objects are static; the FreeRTOS heap is 4,600 bytes. USB DMA/DTC and FreeRTOS software timers are disabled.
 
-The reference Debug map allocates 15,956 bytes before final linker alignment, approximately 97.5% of SRAM. This includes the reserved heap and describes the linked layout, not measured runtime heap or stack usage.
+The reference Debug map allocates 15,972 bytes before final linker alignment, approximately 97.5% of SRAM. This includes the reserved heap and describes the linked layout, not measured runtime heap or stack usage.
 
 ## Project setup and configuration
 
@@ -186,4 +208,6 @@ Starting with all LEDs off, pressing `0` and then `2` leaves blue and red on and
 ![Webpage displaying LED states](images/http_webpage.png)
 
 If the console remains blank, confirm the firmware is running, J11 is connected, and the correct COM port is open, then press any key (other than `0`-`3`). If Wi-Fi connects but the server does not answer, check the PC address, port, server process, firewall, and network isolation settings.
+
+If the terminal prints `Unexpected error occurred` and the red LED blinks, an FSP call in the USB Thread failed or a connection attempt took longer than 300 seconds. The WDT resets the board within about 6 seconds; reopen the COM port if your terminal does not reconnect automatically.
 

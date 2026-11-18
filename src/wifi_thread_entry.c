@@ -1,7 +1,8 @@
 /* The WiFi Thread initializes the DA16200, joins a WiFi access point, opens the on-chip HTTP client, and sends the
  * state of all three on-board LEDs to a status server through HTTP GET. These actions are executed based on the command
  * received from the USB Thread through g_wifi_queue. The USB Thread toggles the LEDs; this thread reads their states
- * through get_led_levels() and gives g_connect_sem only when a connect command has finished. */
+ * through get_led_levels() and gives g_connect_sem only when a connect command has finished. If an LED report fails
+ * after the HTTP client has been opened, this thread disconnects and calls wifi_connect() to rejoin the access point. */
 #include "wifi_config.h"
 #include "wifi_thread.h"
 #include "usb_wifi_interface.h"
@@ -22,7 +23,11 @@ void wifi_thread_entry(void *pvParameters) {
 				case WIFI_APP_CMD_LED_RED:
 					leds = get_led_levels(); // Get current LED states
 					/* Update the server with all three LED states */
-					(void) wifi_send_led_status((bsp_io_level_t)(leds & 1U), (bsp_io_level_t)((leds >> 1U) & 1U), (bsp_io_level_t)((leds >> 2U) & 1U));
+					fsp_err_t err = wifi_send_led_status((bsp_io_level_t)(leds & 1U), (bsp_io_level_t)((leds >> 1U) & 1U), (bsp_io_level_t)((leds >> 2U) & 1U));
+					if((FSP_SUCCESS != err) && (FSP_ERR_NOT_OPEN != err)) {
+						(void) WIFI_Disconnect(); // Clear cached IP
+						wifi_connect((bsp_io_level_t)(leds & 1U), (bsp_io_level_t)((leds >> 1U) & 1U), (bsp_io_level_t)((leds >> 2U) & 1U)); // Reconnect
+					}
 					break;
 
 				case WIFI_APP_CMD_CONNECT:

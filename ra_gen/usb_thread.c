@@ -14,6 +14,26 @@
                 static void usb_thread_func(void * pvParameters);
                 void rtos_startup_err_callback(void * p_instance, void * p_data);
                 void rtos_startup_common_init(void);
+wdt_instance_ctrl_t g_wdt0_ctrl;
+
+const wdt_cfg_t g_wdt0_cfg =
+{
+    .timeout = WDT_TIMEOUT_16384,
+    .clock_division = WDT_CLOCK_DIVISION_8192,
+    .window_start = WDT_WINDOW_START_100,
+    .window_end = WDT_WINDOW_END_0,
+    .reset_control = WDT_RESET_CONTROL_RESET,
+    .stop_control = WDT_STOP_CONTROL_DISABLE,
+    .p_callback = NULL,
+};
+
+/* Instance structure to use this module. */
+const wdt_instance_t g_wdt0 =
+{
+    .p_ctrl        = &g_wdt0_ctrl,
+    .p_cfg         = &g_wdt0_cfg,
+    .p_api         = &g_wdt_on_wdt
+};
 #if BSP_TZ_NONSECURE_BUILD
  #if defined(BSP_CFG_CLOCKS_SECURE) && BSP_CFG_CLOCKS_SECURE
   #error "The LPM module requires CGC registers to be non-secure when it is used in a TrustZone Non-secure project."
@@ -164,6 +184,7 @@ const usb_instance_t g_basic0 =
     .p_cfg         = &g_basic0_cfg,
     .p_api         = &g_usb_on_usb,
 };
+
 
 
 extern uint32_t g_fsp_common_thread_count;
